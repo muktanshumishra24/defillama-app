@@ -10,7 +10,7 @@ import {
 	type SortingState
 } from '@tanstack/react-table'
 import { useRouter } from 'next/router'
-import { startTransition, useDeferredValue, useMemo, useRef, useState } from 'react'
+import { startTransition, useDeferredValue, useMemo, useRef, useState, type SetStateAction } from 'react'
 import { Bookmark } from '~/components/Bookmark'
 import { CSVDownloadButton } from '~/components/ButtonStyled/CsvButton'
 import { BuyOnLlamaswap } from '~/components/BuyOnLlamaswap'
@@ -31,10 +31,16 @@ import { useCustomColumns, useLocalStorageSettingsManager, type CustomColumnDef 
 import { setStorageItem, useStorageItem } from '~/contexts/localStorageStore'
 import { definitions } from '~/public/definitions'
 import { formattedNum, slug } from '~/utils'
-import { parseNumberQueryParam } from '~/utils/routerQuery'
+import { parseNumberQueryParam, pushShallowQuery, readSingleQueryValue } from '~/utils/routerQuery'
 import { formatValue } from '../../utils'
 import { CustomColumnModal } from './CustomColumnModal'
 import { replaceAliases, sampleProtocol } from './customColumnsUtils'
+import {
+	ALL_PROTOCOLS_FORK_FILTER,
+	filterProtocolsByFork,
+	getForkFilterOptions,
+	getValidForkFilter
+} from './forkFilters'
 import { evaluateFormula, getSortableValue } from './formula.service'
 import type { IProtocol } from './types'
 
@@ -92,10 +98,24 @@ const ChainProtocolsTableInner = ({
 	const [extraTvlsEnabled] = useLocalStorageSettingsManager('tvl')
 	const minTvl = parseNumberQueryParam(router.query.minTvl)
 	const maxTvl = parseNumberQueryParam(router.query.maxTvl)
+	const forkFilterOptions = useMemo(() => getForkFilterOptions(protocols), [protocols])
+	const selectedForkFilter = getValidForkFilter(readSingleQueryValue(router.query.fork), forkFilterOptions)
+	const selectedForkFilterValues = useMemo(() => [selectedForkFilter], [selectedForkFilter])
 
 	const finalProtocols = useMemo(() => {
-		return applyProtocolTvlSettings({ protocols, extraTvlsEnabled, minTvl, maxTvl })
-	}, [protocols, extraTvlsEnabled, minTvl, maxTvl])
+		const forkFilteredProtocols = filterProtocolsByFork(protocols, selectedForkFilter)
+		return applyProtocolTvlSettings({ protocols: forkFilteredProtocols, extraTvlsEnabled, minTvl, maxTvl })
+	}, [protocols, selectedForkFilter, extraTvlsEnabled, minTvl, maxTvl])
+
+	const setForkFilter = (forkFilter: string) => {
+		void pushShallowQuery(router, {
+			fork: forkFilter === ALL_PROTOCOLS_FORK_FILTER ? undefined : forkFilter
+		})
+	}
+	const setSelectedForkFilterValues = (values: SetStateAction<string[]>) => {
+		const nextValues = typeof values === 'function' ? values(selectedForkFilterValues) : values
+		setForkFilter(nextValues[0] ?? ALL_PROTOCOLS_FORK_FILTER)
+	}
 
 	const rawColumnsInStorage = useStorageItem(tableColumnOptionsKey, defaultColumns)
 	const columnsInStorage = useDeferredValue(rawColumnsInStorage)
@@ -365,6 +385,18 @@ const ChainProtocolsTableInner = ({
 					values={TABLE_PERIODS_VALUES}
 					variant="responsive"
 				/>
+				{forkFilterOptions.length > 2 ? (
+					<SelectWithCombobox
+						allValues={forkFilterOptions}
+						selectedValues={selectedForkFilterValues}
+						setSelectedValues={setSelectedForkFilterValues}
+						singleSelect
+						nestedMenu={false}
+						label="Forks"
+						labelType="regular"
+						variant="filter"
+					/>
+				) : null}
 
 				<SelectWithCombobox
 					allValues={mergedColumns}
@@ -453,6 +485,7 @@ function isTableFilterState(value: string | null): value is TableFilterState {
 const columnOptions = [
 	{ name: 'Name', key: 'name' },
 	{ name: 'Category', key: 'category' },
+	{ name: 'Forked From', key: 'forked_from' },
 	{ name: 'TVL', key: 'tvl', category: TABLE_CATEGORIES.TVL },
 	{ name: 'TVL 1d change', key: 'change_1d', category: TABLE_CATEGORIES.TVL, period: TABLE_PERIODS.ONE_DAY },
 	{ name: 'TVL 7d change', key: 'change_7d', category: TABLE_CATEGORIES.TVL, period: TABLE_PERIODS.SEVEN_DAYS },
@@ -651,6 +684,30 @@ const columns = [
 		meta: {
 			headerClassName: 'w-[140px]',
 			align: 'end'
+		}
+	}),
+	columnHelper.accessor((row) => row.forkedFrom ?? [], {
+		id: 'forked_from',
+		header: 'Forked From',
+		enableSorting: false,
+		cell: ({ getValue }) => {
+			const forkedFrom = getValue()
+			if (!forkedFrom.length) return null
+
+			return (
+				<span className="flex flex-wrap justify-end gap-x-2 gap-y-1">
+					{forkedFrom.map((fork) => (
+						<BasicLink key={`forked-from-${fork}`} href={`/forks/${slug(fork)}`} className="text-sm text-(--link-text)">
+							{fork}
+						</BasicLink>
+					))}
+				</span>
+			)
+		},
+		meta: {
+			headerClassName: 'w-[180px]',
+			align: 'end',
+			headerHelperText: 'Protocol ancestry tracked by DefiLlama forks data'
 		}
 	}),
 	columnHelper.group({
