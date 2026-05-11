@@ -205,6 +205,7 @@ export interface IChildProtocol {
 		monthlyAverage1y: number | null
 		totalAllTime: number | null
 	}
+	forkedFrom?: Array<string>
 	deprecated?: boolean
 }
 

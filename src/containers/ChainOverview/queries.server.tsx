@@ -888,6 +888,10 @@ export const getProtocolsByChain = async ({
 			defillamaId: protocol.defillamaId
 		}
 
+		if (protocol.forkedFrom?.length) {
+			childStore.forkedFrom = protocol.forkedFrom
+		}
+
 		if (protocol.deprecated) {
 			childStore.deprecated = true
 		}
@@ -1116,6 +1120,9 @@ export const getProtocolsByChain = async ({
 			const parentLlamaswapChains = parentProtocol.gecko_id
 				? (protocolLlamaswapDataset?.[parentProtocol.gecko_id] ?? null)
 				: null
+			const parentForkedFrom = Array.from(
+				new Set(parentStore[parentProtocol.id].flatMap((child) => child.forkedFrom ?? []))
+			)
 
 			protocolsStore[parentProtocol.id] = {
 				name: protocolMetadata[parentProtocol.id].displayName,
@@ -1131,7 +1138,8 @@ export const getProtocolsByChain = async ({
 					? (protocolTokenPrices[`coingecko:${parentProtocol.gecko_id}`]?.price ?? null)
 					: null,
 				...(parentLlamaswapChains?.length ? { llamaswapChains: parentLlamaswapChains } : {}),
-				mcaptvl: parentMcapTvl
+				mcaptvl: parentMcapTvl,
+				...(parentForkedFrom.length ? { forkedFrom: parentForkedFrom } : {})
 			}
 
 			if (parentFees) {
